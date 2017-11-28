@@ -24,17 +24,3 @@ trait BaseConf {
 
 }
 
-
-/*
-trait YibiConfig extends  {
-
-  def conf:YibiConf
-
-  def httpHost = conf.httpHost
-  def httpPort = conf.httpPort
-
-  def keyspace = conf.keyspace
-  def columnfamily = conf.columnfamily
-
-}
-*/
