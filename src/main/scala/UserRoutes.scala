@@ -53,6 +53,8 @@ trait UserRoutes extends AkkaUtil with HtmlContent with Dao {
           //in the database
           //redirect
           case Some(urlRedirect) =>
+
+            println(s"redirect ${urlRedirect} ")
             Future(HttpResponse(status = StatusCodes.PermanentRedirect, headers = headers.Location(urlRedirect) :: Nil,
               entity = StatusCodes.PermanentRedirect.htmlTemplate match {
                 case "" => HttpEntity.Empty
