@@ -1,4 +1,5 @@
 
+
 lazy val appVersion = "1.0.0"
 lazy val appName = "yibi"
 lazy val appOrganization = "com.ngs"
@@ -52,4 +53,5 @@ lazy val root = (project in file("."))
     )
   )
 
+        
         
