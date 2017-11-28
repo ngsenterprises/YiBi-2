@@ -142,3 +142,4 @@ class DaoSpec extends FlatSpec with BaseConf with Dao {
   }
 
 }
+
