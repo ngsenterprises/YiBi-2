@@ -1,85 +1,144 @@
-package com.ngs.yibi.routesspecs
+package com.ngs.yibi.daotest
 
-//com.ngs.yibi.routesspecs.UserRoutesSpec
-
-import scala.concurrent.duration.Duration
-import scala.concurrent.{ Await, Future }
-import scala.concurrent.Future
-import scala.util.{Try, Success, Failure}
-
-import akka.http.scaladsl.model._
-import akka.http.scaladsl.model.HttpMethods._
-import akka.http.scaladsl.model.HttpResponse
-import akka.http.scaladsl.Http
-import akka.util.ByteString
-
-import com.ngs.yibi.baseconfig._
-import com.ngs.yibi.akkautil.AkkaUtil
-import com.ngs.yibi.dao.Dao
+//com.ngs.yibi.daotest.DaoSpec
 
 import org.scalatest.FlatSpec
-import com.ngs.yibi.httpservice.HttpService
-
-
+import com.ngs.yibi.baseconfig._
+import com.ngs.yibi.dao.Dao
 import com.softwaremill.macwire._
 
-object testObj extends App with HttpService
+class DaoSpec extends FlatSpec with BaseConf with Dao {
 
-class UserRoutesSpec extends FlatSpec with BaseConf with AkkaUtil with Dao {
+  "A call to createKeyspace( keyspaceName )" should "create keyspaceName as a keySpace." in {
 
-  "default GET" should "return the home page" in {
+    createKeyspace( keyspace, 1 )
 
-    val testuri = s"http://${httpHost}:${httpPort}"
-
-    val fut: Future[HttpResponse] = Http().singleRequest(HttpRequest(GET, uri = testuri))
-
-    fut.onComplete {
-      case Failure( f ) => assert( false )
-      case Success( s ) if ( s.status == StatusCodes.OK ) => assert( true )
+    val buf = scala.collection.mutable.ListBuffer.empty[String]
+    session.execute( "SELECT * FROM system_schema.keyspaces" ) match {
+      case rs if ( rs.isExhausted ) => throw new RuntimeException("rs.isExhausted")
+      case rs => rs.forEach( r => buf += r.getString("keyspace_name") )
     }
+    assert( buf.exists( _ == keyspace ) )
 
-    //val res = Await.ready( fut, Duration.Inf )
-
+    session.execute( s"DROP KEYSPACE IF EXISTS ${keyspace}" )
   }
 
-  "POST" should "insert the url." in {
+  "A call to createTable( tableName )" should "create a tableName as a table." in {
 
-    val testuri = s"http://${httpHost}:${httpPort}/urls"
+    createKeyspace( keyspace )
+    createTable( s"${keyspace}.${columnfamily}" )
 
-    val rawurl = """www.allitebooks.com/"""
-    val surl = """http://""" +rawurl
+    val buf = scala.collection.mutable.ListBuffer.empty[String]
+    session.execute( "select table_name from system_schema.tables" ) match {
+      case rs if ( rs.isExhausted ) => throw new RuntimeException("rs.isExhausted")
+      case rs => rs.forEach( r => buf += r.getString("table_name") )
+    }
+    assert( buf.exists( _ == columnfamily ) )
 
-    val fut: Future[HttpResponse] =
-      Http().singleRequest(
-        HttpRequest(
-          POST,
-          uri = testuri,
-          entity=HttpEntity.Strict(
-            ContentTypes.`text/plain(UTF-8)` ,
-            akka.util.ByteString( surl )
-            //ByteString(117, 114, 108, 61, 104, 116, 116, 112, 37, 51, 65, 37, 50, 70, 37, 50, 70, 119, 119, 119, 46, 97, 108, 108, 105, 116, 101, 98, 111, 111, 107, 115, 46, 99, 111, 109, 37, 50, 70)
-          )
-        )
-      )
-
-    fut.onComplete {
-      case Failure( f ) => assert( false )
-      case Success( s ) if ( s.status == StatusCodes.OK ) =>
-
-        getId( rawurl, s"${keyspace}.${columnfamily}" ) match {
-
-          case Success( s ) =>
-        }
+    session.execute( s"DROP TABLE IF EXISTS ${keyspace}.${columnfamily}" )
+    session.execute( s"DROP KEYSPACE IF EXISTS ${keyspace}" )
+  }
 
 
+  "A call to the getLargestRecordAdded method, on an empty table" should "return an empty ResultSet." in {
 
+    createKeyspace( keyspace )
+    createTable( s"${keyspace}.${columnfamily}" )
 
-        assert( true )
+    val res = getLargestRecordAdded( s"${keyspace}.${columnfamily}" )
+
+    assert( res.isEmpty )
+
+    session.execute( s"DROP TABLE IF EXISTS ${keyspace}.${columnfamily}" )
+    session.execute( s"DROP KEYSPACE IF EXISTS ${keyspace}" )
+  }
+
+  "A call to the insertUrl method" should "insert an item." in {
+
+    val index = 0L
+    val url = "testurl"
+
+    createKeyspace( keyspace )
+    createTable( s"${keyspace}.${columnfamily}" )
+
+    insertUrl( url, index, s"${keyspace}.${columnfamily}" )
+
+    session.execute( s"select * from ${keyspace}.${columnfamily}" ) match {
+      case rs if ( rs.isExhausted ) => throw new RuntimeException("Error: insertUrl.")
+      case rs => assert( rs.one().getString("orgurl") == url )
     }
 
-    //val res = Await.ready( fut, Duration.Inf )
-    //println(s"res ${res}")
+    session.execute( s"DROP TABLE IF EXISTS ${keyspace}.${columnfamily}" )
+    session.execute( s"DROP KEYSPACE IF EXISTS ${keyspace}" )
+  }
 
+  "A call to the getLargestRecordAdded method, on a single item table" should "return one item ResultSet." in {
+
+    val index = 0L
+    val url = "testurl"
+
+    createKeyspace( keyspace )
+    createTable( s"${keyspace}.${columnfamily}" )
+    insertUrl( url, index, s"${keyspace}.${columnfamily}" )
+
+    val res = getLargestRecordAdded( s"${keyspace}.${columnfamily}" )
+
+    assert( !res.isEmpty )
+    res.forall( _ == 0L )
+
+    session.execute( s"DROP TABLE IF EXISTS ${keyspace}.${columnfamily}" )
+    session.execute( s"DROP KEYSPACE IF EXISTS ${keyspace}" )
+  }
+
+  "A call to the getLastRecordAdded method, on a muli item table" should "return one item ResultSet with largest seedid." in {
+
+    createKeyspace( keyspace )
+    createTable( s"${keyspace}.${columnfamily}" )
+    insertUrl( "testurl_0", 0L, s"${keyspace}.${columnfamily}" )
+    insertUrl( "testurl_1", 1L, s"${keyspace}.${columnfamily}" )
+
+    val res = getLargestRecordAdded( s"${keyspace}.${columnfamily}" )
+
+    assert( !res.isEmpty )
+    res.forall( _ == 1L )
+
+    session.execute( s"DROP TABLE IF EXISTS ${keyspace}.${columnfamily}" )
+    session.execute( s"DROP KEYSPACE IF EXISTS ${keyspace}" )
+  }
+
+  "A call to the getUrl method, on a muli item table" should "return the item with indicated seedid." in {
+
+    createKeyspace( keyspace )
+    createTable( s"${keyspace}.${columnfamily}" )
+    insertUrl( "testurl_0", 0L, s"${keyspace}.${columnfamily}" )
+    insertUrl( "testurl_1", 1L, s"${keyspace}.${columnfamily}" )
+
+    val res = getUrl( 1L, s"${keyspace}.${columnfamily}" )
+
+    //println( s"res ${res}" )
+
+    assert( !res.isEmpty )
+    res.forall( _ == "testurl_1" )
+
+    session.execute( s"DROP TABLE IF EXISTS ${keyspace}.${columnfamily}" )
+    session.execute( s"DROP KEYSPACE IF EXISTS ${keyspace}" )
+  }
+
+  "A call to the getId method, on a muli item table" should "return the item with indicated url." in {
+
+    createKeyspace( keyspace )
+    createTable( s"${keyspace}.${columnfamily}" )
+    insertUrl( "test_url_0", 0L, s"${keyspace}.${columnfamily}" )
+    insertUrl( "test_url_1", 1L, s"${keyspace}.${columnfamily}" )
+
+    val res = getId( "test_url_1", s"${keyspace}.${columnfamily}" )
+    //println( res )
+
+    assert( !res.isEmpty )
+    res.forall( _ == 1L )
+
+    session.execute( s"DROP TABLE IF EXISTS ${keyspace}.${columnfamily}" )
+    session.execute( s"DROP KEYSPACE IF EXISTS ${keyspace}" )
   }
 
 }
